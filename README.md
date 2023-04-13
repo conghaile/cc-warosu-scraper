@@ -1,0 +1,2 @@
+## CoinCrowd Warosu Scraper
+A Node application that scrapes warosu, a third-party 4chan archive, for /biz/ threads. Used alongside the [NLP app](https://github.com/conghaile/cc-nlp-service) to accumulate an analyzed archive of the board for CoinCrowd.
