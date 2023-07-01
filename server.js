@@ -30,9 +30,9 @@ let maxNumberOfBrowsers = 20
 // })
 
 app.get('/', async (req, res) => {
-    res.send("Job started")
-    fullScrapeHandler()
-    
+    const scrapeType = req.query.scrapeType
+    await fullScrapeHandler(scrapeType)
+    res.send("Done")
 })
 
 app.post('/api/threads', async (req, res) => {
@@ -60,10 +60,10 @@ app.post('/api/threads', async (req, res) => {
     }
 })
 
-async function fullScrapeHandler(arg) {
+async function fullScrapeHandler(scrapeType) {
     console.log("Scraping /biz/...")
-    let puppeteerMng = new PuppeteerManager(arg)
-    await puppeteerMng.fullScrape()
+    let puppeteerMng = new PuppeteerManager()
+    await puppeteerMng.fullScrape(scrapeType)
 }
 
 async function getThreadsHandler(arg) {

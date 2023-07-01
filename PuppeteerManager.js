@@ -15,9 +15,10 @@ class PuppeteerManager {
                 "--no-sandbox",
                 "--disable-gpu",
             ],
-            // headless: false
+            headless: false
         })
         const page = await browser.newPage()
+        page.setDefaultTimeout(300000)
         await page.setRequestInterception(true)
         page.on('request', (req) => {
             if (req.resourceType() === 'image') {
@@ -39,7 +40,6 @@ class PuppeteerManager {
         })
 
         await browser.close()
-
         return latestExpired
     }
 
@@ -49,9 +49,10 @@ class PuppeteerManager {
                 "--no-sandbox",
                 "--disable-gpu",
             ],
-            // headless: false
+            headless: false
         })
         const page = await browser.newPage()
+        page.setDefaultTimeout(300000)
         await page.setRequestInterception(true)
         page.on('request', (req) => {
             if (req.resourceType() === 'image') {
@@ -64,7 +65,7 @@ class PuppeteerManager {
         await page.goto(`https://warosu.org/biz/?task=page&page=${String(pageNum)}`)
         const threads = await page.evaluate(() => {
             let posts = []
-            document.querySelectorAll('div[itemtype="http://schema.org/DiscussionForumPosting"] > a.js[href^="/biz/thread/"]')
+            document.querySelectorAll('div[id^="p"] > a.js[href^="/biz/thread/"]')
                 .forEach(post => {
                     posts.push(Number(post.innerHTML.slice(3)))
                 })
@@ -72,7 +73,6 @@ class PuppeteerManager {
         })
 
         await browser.close()
-
         return threads
 
     }
@@ -165,9 +165,10 @@ class PuppeteerManager {
                 "--no-sandbox",
                 "--disable-gpu",
             ],
-            // headless: false
+            headless: false
         })
         const page = await browser.newPage()
+        page.setDefaultTimeout(300000)
         await page.setRequestInterception(true)
         page.on('request', (req) => {
             if (req.resourceType() === 'image') {
@@ -190,8 +191,8 @@ class PuppeteerManager {
             let postText = [];
             let postNos = [];
             let times = [];
-            posts[document.querySelector('div[itemtype="http://schema.org/DiscussionForumPosting"]').id.slice(1)] = {
-                'text': document.querySelector('blockquote > p[itemprop=text]').innerText,
+            posts[document.querySelector('div[id^="p"]').id.slice(1)] = {
+                'text': document.querySelector('blockquote > p').innerText,
                 'time': document.querySelector('div > label > span.posttime').title,
                 'replies': []
             }
@@ -223,37 +224,88 @@ class PuppeteerManager {
         return posts
     }
 
-    async fullScrape() {
+    async fullScrape(scrapeType) {
         const lastExpired = await this.getLastExpired()
+        const latestScraped = await this.getLatestScraped()
         const redisClient = createClient()
         redisClient.on('error', err => console.log('Redis Client Error', err));
         await redisClient.connect();
         let finished = false
         let page = 1
-        while (!finished) {
-            const threads = await this.getThreadsOnPage(page)
-            if (threads.length > 0) {
-                page++
-                for (const thread of threads) {
-                    if (Number(thread) < Number(lastExpired)) {
-                        let isMember = await redisClient.sIsMember('seenThreads', String(thread))
-                        if (!isMember) {
-                            console.log("thread", thread, "not seen, scraping...")
-                            let threadPosts = await this.scrapeThread(thread)
-                            if (threadPosts !== null) {
-                                await redisClient.sAdd('seenThreads', String(thread))
-                                const response = await axios.post('http://127.0.0.1:5001/threads', threadPosts)
+        let firstScraped = -1
+        while (!finished && page < 1000) {
+            if (scrapeType === "full") {
+                const threads = await this.getThreadsOnPage(page)
+                await this.sleep(1000)
+                if (threads.length > 0) {
+                    page++
+                    for (const thread of threads) {
+                        if (Number(thread) < Number(lastExpired)) {
+                            let isMember = await redisClient.sIsMember('seenThreads', String(thread))
+                            if (!isMember) {
+                                console.log("thread", thread, "not seen, scraping...")
+                                let threadPosts = await this.scrapeThread(thread)
+                                await this.sleep(1000)
+                                if (threadPosts !== null) {
+                                    await redisClient.sAdd('seenThreads', String(thread))
+                                    await axios.post('http://127.0.0.1:5001/threads', threadPosts)
+                                }
                             }
                         }
                     }
+                } else {
+                    console.log("Whew, all done!")
+                    await redisClient.quit()
+                    finished = true
                 }
-            } else {
-                console.log("Whew, all done!")
-                await redisClient.quit()
-                finished = true
+            }  else if (scrapeType === "latest") {
+                const threads = await this.getThreadsOnPage(page)
+                await this.sleep(1000)
+                if (threads.length > 0) {
+                    page++
+                    for (const thread of threads) {
+                        if (Number(thread) < Number(lastExpired) && Number(thread) > Number(latestScraped)) {
+                            let isMember = await redisClient.sIsMember('seenThreads', String(thread))
+                            if (!isMember) {
+                                console.log("thread", thread, "not seen, scraping...")
+                                if (firstScraped === -1) {
+                                    firstScraped = Number(thread)
+                                    await redisClient.set("latestScraped", String(firstScraped))
+                                }
+                                let threadPosts = await this.scrapeThread(thread)
+                                await this.sleep(1000)
+                                if (threadPosts !== null) {
+                                    await redisClient.sAdd('seenThreads', String(thread))
+                                    await axios.post('http://127.0.0.1:5001/threads', threadPosts)
+                                }
+                            }
+                        } else {
+                            console.log("Done.")
+                            await redisClient.quit()
+                            finished = true
+                            break
+                        }
+                    }
+                } else {
+                    console.log("Done.")
+                    await redisClient.quit()
+                    finished = true
+                    break
+                }
             }
-            
         }
+    }
+
+    async sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms))
+    }
+
+    async getLatestScraped() {
+        const redisClient = createClient()
+        redisClient.on('error', err => console.log('Redis Client Error', err));
+        await redisClient.connect();
+        const result = await redisClient.get("latestScraped")
+        return result === null ? 0 : result
     }
 
 }
