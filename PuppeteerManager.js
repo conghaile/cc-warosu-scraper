@@ -15,7 +15,7 @@ class PuppeteerManager {
                 "--no-sandbox",
                 "--disable-gpu",
             ],
-            headless: false
+            // headless: false
         })
         const page = await browser.newPage()
         page.setDefaultTimeout(300000)
@@ -49,7 +49,7 @@ class PuppeteerManager {
                 "--no-sandbox",
                 "--disable-gpu",
             ],
-            headless: false
+            // headless: false
         })
         const page = await browser.newPage()
         page.setDefaultTimeout(300000)
@@ -165,7 +165,7 @@ class PuppeteerManager {
                 "--no-sandbox",
                 "--disable-gpu",
             ],
-            headless: false
+            // headless: false
         })
         const page = await browser.newPage()
         page.setDefaultTimeout(300000)
